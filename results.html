@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AWOL 2026 — Private Results</title>
+<style>
+body{font-family:Arial,sans-serif;background:#f5f7fb;margin:0;color:#172033}
+header{background:#111b3a;color:white;padding:22px 18px}
+h1{margin:0;font-size:24px} .sub{opacity:.8;margin-top:6px}
+main{max-width:1000px;margin:24px auto;padding:0 16px}
+.card{background:white;border-radius:14px;padding:20px;margin-bottom:18px;box-shadow:0 3px 14px #0001}
+input{width:100%;box-sizing:border-box;padding:13px;margin:7px 0;border:1px solid #ccd3df;border-radius:8px;font-size:16px}
+button{border:0;border-radius:8px;padding:12px 18px;font-size:16px;cursor:pointer}
+#loginBtn{background:#1769e0;color:white;width:100%;margin-top:8px}
+#logoutBtn{background:#e8ecf3;color:#172033}
+.stat{display:inline-block;min-width:180px;margin:6px 8px 6px 0;padding:14px;background:#eef3ff;border-radius:10px}
+.stat b{display:block;font-size:25px}
+.category{border:1px solid #e1e5ec;border-radius:12px;margin:14px 0;overflow:hidden}
+.category h3{margin:0;padding:14px;background:#f1f4f9}
+.row{padding:12px 14px;border-top:1px solid #e8ebf0}
+.bar{height:9px;background:#dfe5ee;border-radius:8px;margin-top:7px;overflow:hidden}
+.fill{height:100%;background:#1769e0}
+.meta{font-size:13px;color:#647084}
+.hidden{display:none}.error{color:#b42318;background:#fff0ee;padding:12px;border-radius:8px}
+.success{color:#067647;background:#ecfdf3;padding:12px;border-radius:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>AWOL African European Awards 2026</h1>
+  <div class="sub">Private Results Dashboard</div>
+</header>
+<main>
+  <section id="loginCard" class="card">
+    <h2>Admin Login</h2>
+    <p class="meta">Only the authorized admin account can read voting results.</p>
+    <input id="email" type="email" placeholder="Admin email">
+    <input id="password" type="password" placeholder="Password">
+    <button id="loginBtn">Sign in</button>
+    <div id="loginMsg"></div>
+  </section>
+
+  <section id="dashboard" class="hidden">
+    <div class="card">
+      <button id="logoutBtn">Sign out</button>
+      <h2>Voting Results</h2>
+      <div id="stats"></div>
+      <div id="status" class="meta"></div>
+    </div>
+    <div id="results"></div>
+  </section>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyCYRx-mJB4j8Mvc1tm8yUYmLuh0X3tnmjY",
+  authDomain: "awol-2026.firebaseapp.com",
+  projectId: "awol-2026",
+  storageBucket: "awol-2026.firebasestorage.app",
+  messagingSenderId: "209488978180",
+  appId: "1:209488978180:web:4c447fa5864b0e710c7051",
+  measurementId: "G-L2JZLCHV1Q"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth();
+const db=firebase.firestore();
+const ADMIN="moral365stories@gmail.com";
+
+const loginCard=document.getElementById("loginCard");
+const dashboard=document.getElementById("dashboard");
+const loginMsg=document.getElementById("loginMsg");
+
+document.getElementById("loginBtn").onclick=async()=>{
+  loginMsg.textContent="";
+  const email=document.getElementById("email").value.trim();
+  const password=document.getElementById("password").value;
+  if(!email||!password){loginMsg.innerHTML='<div class="error">Enter your email and password.</div>';return;}
+  try{
+    await auth.signInWithEmailAndPassword(email,password);
+  }catch(e){
+    loginMsg.innerHTML='<div class="error">Login failed: '+escapeHtml(e.message)+'</div>';
+  }
+};
+
+document.getElementById("logoutBtn").onclick=()=>auth.signOut();
+
+auth.onAuthStateChanged(async user=>{
+  if(!user){
+    loginCard.classList.remove("hidden");
+    dashboard.classList.add("hidden");
+    return;
+  }
+  if((user.email||"").toLowerCase()!==ADMIN){
+    await auth.signOut();
+    loginMsg.innerHTML='<div class="error">This account is not authorized for the results dashboard.</div>';
+    return;
+  }
+  loginCard.classList.add("hidden");
+  dashboard.classList.remove("hidden");
+  await loadResults();
+});
+
+async function loadResults(){
+  const status=document.getElementById("status");
+  const stats=document.getElementById("stats");
+  const results=document.getElementById("results");
+  status.textContent="Loading results…";
+  results.innerHTML="";
+  try{
+    const snap=await db.collection("vote").get();
+    const categories={};
+    let validBallots=0;
+    snap.forEach(doc=>{
+      const data=doc.data();
+      if(!Array.isArray(data.selections)) return;
+      validBallots++;
+      data.selections.forEach(sel=>{
+        if(!sel||!sel.cat||!sel.name) return;
+        if(!categories[sel.cat]) categories[sel.cat]={};
+        categories[sel.cat][sel.name]=(categories[sel.cat][sel.name]||0)+1;
+      });
+    });
+
+    stats.innerHTML=
+      '<div class="stat"><span>Total ballots</span><b>'+validBallots+'</b></div>'+
+      '<div class="stat"><span>Categories</span><b>'+Object.keys(categories).length+'</b></div>'+
+      '<div class="stat"><span>Vote records</span><b>'+snap.size+'</b></div>';
+
+    const testRecords=snap.size-validBallots;
+    let notice=testRecords>0
+      ? '<div class="success">Results loaded. '+testRecords+' record(s) without selections were ignored.</div>'
+      : '<div class="success">Results loaded successfully.</div>';
+    status.innerHTML=notice;
+
+    const cats=Object.keys(categories);
+    if(!cats.length){
+      results.innerHTML='<div class="card">No voting results found yet.</div>';
+      return;
+    }
+
+    cats.forEach(cat=>{
+      const counts=categories[cat];
+      const total=Object.values(counts).reduce((a,b)=>a+b,0);
+      const names=Object.keys(counts).sort((a,b)=>counts[b]-counts[a]||a.localeCompare(b));
+      let html='<div class="card category"><h3>'+escapeHtml(cat)+'</h3>';
+      names.forEach(name=>{
+        const n=counts[name], pct=total?(n/total*100):0;
+        html+='<div class="row"><strong>'+escapeHtml(name)+'</strong>'+
+          '<div class="meta">'+n+' vote'+(n===1?'':'s')+' · '+pct.toFixed(1)+'%</div>'+
+          '<div class="bar"><div class="fill" style="width:'+pct+'%"></div></div></div>';
+      });
+      html+='</div>';
+      results.insertAdjacentHTML("beforeend",html);
+    });
+  }catch(e){
+    status.innerHTML='<div class="error">Could not load results: '+escapeHtml(e.message)+'</div>';
+  }
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+}
+</script>
+</body>
+</html>
